@@ -1,0 +1,110 @@
+%% 使用Sobel算法进行梯度（）的大小和方向进行统计
+%根据OpenCV的HOGDescriptor的源码进行编写
+
+%计算图像img的梯度幅度图像grad和梯度方向图像qangle.
+function [grad, qangle] = ham_sobel2(InImage)
+%InImage 为单通道图像（测试基准为Gray灰度图)
+nbins = 9;
+[m,n, c] = size(InImage);
+if c > 1
+    InImage = rgb2gray(InImage);
+end
+%% 扩充图像
+%将图像按照输入参数进行扩充,这里不是为了计算边缘梯度而做的扩充，因为
+%为了边缘梯度而扩充是在后面的代码完成的，所以这里为什么扩充暂时还不明白。
+Image = zeros(m+2,n+2);     %前后各扩充一行或一列
+
+%% gamma校正算法
+%gamma校正指的是将0～256的像素值全部开根号，即范围缩小了，且变换范围都不成线性了
+gamma_lut = zeros(1,256);
+if 1    % enable gamma correction
+    for i = 1:256
+        gamma_lut(1,i) = sqrt(i);
+    end
+else
+    for i = 1:256
+        gamma_lut(1,i) = i;
+    end
+end
+%% 边界扩充（使用BORDER_REFLECT_101边界填充）
+%边界扩充后所填充像素点的方式：
+% Various border types, image boundaries are denoted with '|'
+% * BORDER_REPLICATE:     aaaaaa|abcdefgh|hhhhhhh
+% * BORDER_REFLECT:       fedcba|abcdefgh|hgfedcb
+% * BORDER_REFLECT_101:   gfedcb|abcdefgh|gfedcba
+% * BORDER_WRAP:          cdefgh|abcdefgh|abcdefg        
+% * BORDER_CONSTANT:      iiiiii|abcdefgh|iiiiiii  with some specified 'i'
+for i=2:m+1
+    for j=2:n+1
+        Image(i,j) = InImage(i-1,j-1);
+    end
+end
+% 第一行==第二行
+Image(1,:) = Image(2,:);
+% 倒数第一行==倒数第二行
+Image(m+2,:) = Image(m+1,:);
+% 第一列==第二列
+Image(:,1) = Image(:,2);
+% 倒数第一列==倒数第二列
+Image(:,n+2) = Image(:,n+1);
+%% 计算梯度的幅值和方向
+Gx = zeros(m,n);
+Gy = zeros(m,n);
+G = zeros(m,n);
+g = zeros(m,n);
+a = zeros(m,n);
+A = zeros(m,n);
+for i=2:m+1
+    for j=2:n+1
+        %水平方向梯度
+        %Gx(i-1,j-1) = Image(i+1,j) - Image(i-1,j);
+        Gx(i-1,j-1) = gamma_lut(1,Image(i+1,j)+1) - gamma_lut(1,Image(i-1,j)+1);
+        %垂直方向梯度
+        Gy(i-1,j-1) = gamma_lut(1,Image(i,j+1)+1) - gamma_lut(1,Image(i,j-1)+1);
+        %幅值
+        %G(i-1,j-1) = abs(Gx(i-1,j-1)) + abs(Gy(i-1,j-1));
+        G(i-1,j-1) = sqrt((Gx(i-1,j-1))^2 + (Gy(i-1,j-1))^2);
+        %方向
+        a(i-1,j-1) = atan(Gy(i-1,j-1)/Gx(i-1,j-1));
+        if isnan(a(i-1,j-1))
+            a(i-1,j-1) = 0;
+        end
+    end
+% //保存该梯度方向在左右相邻的bin的模，本来只有一个模何来的两个？插值！  
+% //线性插值，比如某点算出来应该属于 bin 7.6,但是我们的bin都是整数的，四舍五入，把他划分到bin 8又太粗糙了  
+% //那就按该点到bin7,bin8的距离分配，这样部分属于8，部分属于7。  
+% 
+grad = zeros(m,n*2);
+qangle = zeros(m,n*2);
+    for j=2:n+1
+        mag = G(i-1,j-1);
+        angle = a(i-1,j-1)*(9/pi)-0.5;
+        hidx = floor(angle);
+        angle = angle-hidx;
+        
+        grad(i*2-1,j-1) = mag*(1.0-angle);
+        grad(i-1,j-1) = mag*angle;
+        
+        if hidx < 0
+            hidx = hidx+nbins;
+        elseif hidx >=nbins
+            hidx = hidx-nbins;
+        end
+        qangle(i-1,j-1) = hidx;
+        hidx = hidx+1;
+        if hidx < nbins
+            hidx = hidx;
+        else
+            hidx = 0;
+        end
+        qangle(i-1,j-1) = hidx;
+    end
+end %for i=2:m+1
+    
+grad = G;
+qangle = a;   %//-pi/2<Angle<pi/2;
+
+
+
+
+end
